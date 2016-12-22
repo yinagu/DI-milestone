@@ -2,24 +2,25 @@ from flask import Flask, request, render_template, redirect
 import requests
 import json
 import pandas as pd
-from bokeh.plotting import figure, output_file
+from bokeh.plotting import figure
+from bokeh.io import output_file, save
 from bokeh.embed import components
 import os
 
-def get_guandl(ticker):
-    r = requests.get('https://www.quandl.com/api/v3/datasets/WIKI/'+ticker+'.json?order=asc')
-
+def get_quandl(ticker):
+    r = requests.get('https://www.quandl.com/api/v3/datasets/WIKI/'+ticker+'.json?api_key=ts2seF_Hy53zE-K6xcxz')
+    
     if r.status_code != 404:
         # extract stock data
         data = json.loads(r.text)
-        df = pd.read_json(json.dump(data['dataset']['data']))
+        df = pd.DataFrame(data['dataset']['data'])
         # assign column names
         df.columns = data['dataset']['column_names']
         # convert to datetime
         df['Date'] = pd.to_datetime(df['Date'])
 
         # return the last 30-days stock data
-        df = df.tail(30)
+        df = df.head(30)
 
         # extract company name
         name = data['dataset']['name'].split('(')[0]
@@ -32,19 +33,21 @@ def get_guandl(ticker):
 
 
 def plot_stock(df, features, ticker):
-    output_file('stockplot.html', title=ticker+'stock price for last 30 days')
     p = figure(x_axis_type = 'datetime')
+    # Color dictionary
+    colors={'Open':'blue','Close':'green', 'High':'red'}
     # plot'open/high/close prices'
     for feature in features:
-        p.line(df['Date'], df[features[feature]], legend = feature)
+        p.line(df['Date'], df[feature], color = colors[feature], legend = feature)
 
-    p.title = "Stock price of " +ticker+" (from Quandle Wiki database)"
+    p.title = "Stock price of " +ticker+" for the last 30 days"
     p.grid.grid_line_alpha = 1.0
     p.xaxis.axis_label = "Date"
     p.yaxis.axis_label = "Price"
 
-    script, div = components(p)
-    return script, div
+    output_file('templates/stockplot.html', title=ticker+' stock price')
+    save(p)
+    return p
 
 
 app = Flask(__name__)
@@ -64,10 +67,12 @@ def show_stock():
 
     # get list of checked features
     features = request.form.getlist('feature')
+
     # fetch data via Quandl
     df, name = get_quandl(ticker)
     # create Bokeh plot
-    script, div = plot_stock(df, features, ticker)
+    p = plot_stock(df, features, ticker)
+    script, div = components(p)
     return render_template('stockplot.html', script = script, div = div, ticker = name)
 
 if __name__ == '__main__':
